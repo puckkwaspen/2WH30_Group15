@@ -176,24 +176,62 @@ if __name__ == '__main__':
 
         def forward(self, xb):
             return self.network(xb)
+    def precision_and_recall(outputs, labels):
+        preds = (outputs > 0.5).float()
+        tp = torch.sum((preds == 1) & (labels == 1)).item()  # True Positives
+        fp = torch.sum((preds == 1) & (labels == 0)).item()  # False Positives
+        fn = torch.sum((preds == 0) & (labels == 1)).item()  # False Negatives
 
+        precision = tp / (tp + fp + 1e-8)  # Add small epsilon to avoid division by zero
+        recall = tp / (tp + fn + 1e-8)
+
+        return precision, recall
+
+
+    def fbeta_score(outputs, labels, beta=0.5):
+        precision, recall = precision_and_recall(outputs, labels)
+        beta_squared = beta ** 2
+        fbeta = (1 + beta_squared) * (precision * recall) / (beta_squared * precision + recall + 1e-8)
+        return fbeta
 
     def accuracy(outputs, labels):
         preds = (outputs > 0.5).float()
         return torch.tensor(torch.sum(preds == labels).item() / len(preds))
 
     @torch.no_grad()
+    #def evaluate(model, test_loader):
+       # model.eval()
+       # test_losses, test_accs = [], []
+       # for images, labels in test_loader:
+           # images, labels = images.to(device), labels.to(device)
+           # outputs = model(images)
+           # loss = F.binary_cross_entropy(outputs, labels.unsqueeze(1))
+           # acc = accuracy(outputs, labels.unsqueeze(1))
+           # test_losses.append(loss.item())
+           # test_accs.append(acc.item())
+        #return {'loss': sum(test_losses) / len(test_losses), 'accuracy': sum(test_accs) / len(test_accs)}
+
+
+    @torch.no_grad()
     def evaluate(model, test_loader):
         model.eval()
-        test_losses, test_accs = [], []
+        test_losses, test_accs, test_fbeta = [], [], [] # adding a new list
         for images, labels in test_loader:
             images, labels = images.to(device), labels.to(device)
             outputs = model(images)
             loss = F.binary_cross_entropy(outputs, labels.unsqueeze(1))
             acc = accuracy(outputs, labels.unsqueeze(1))
+            fbeta = fbeta_score(outputs, labels.unsqueeze(1), beta=0.5) # using the f0.5 score
             test_losses.append(loss.item())
             test_accs.append(acc.item())
-        return {'loss': sum(test_losses) / len(test_losses), 'accuracy': sum(test_accs) / len(test_accs)}
+            test_fbeta.append(fbeta)
+        return {
+            'loss': sum(test_losses) / len(test_losses),
+            'accuracy': sum(test_accs) / len(test_accs),
+            'f0.5': sum(test_fbeta) / len(test_fbeta)
+        }
+
+
 
     def fit(epochs, lr, model, train_loader, test_loader, opt_func=torch.optim.SGD):
         history = []
@@ -215,9 +253,11 @@ if __name__ == '__main__':
             result = evaluate(model, test_loader)
             result['train_loss'] = sum(train_losses) / len(train_losses)
             print(f"Epoch [{epoch + 1}/{epochs}], Train Loss: {result['train_loss']:.4f}, "
-                  f"Test Loss: {result['loss']:.4f}, Accuracy: {result['accuracy']:.4f}")
+                  f"Test Loss: {result['loss']:.4f}, Accuracy: {result['accuracy']:.4f}, "
+                  f"F0.5: {result['f0.5']:.4f}") # Adding the f0.5 to the print statement
             history.append(result)
         return history
+
 
     # Initialize and train the model
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -250,3 +290,15 @@ if __name__ == '__main__':
 
 
     plot_losses(history)
+
+
+    def plot_fbeta(history):
+        """Plot the history of F0.5 scores"""
+        fbetas = [x['f0.5'] for x in history]
+        plt.plot(fbetas, '-gx')
+        plt.xlabel('epoch')
+        plt.ylabel('F0.5')
+        plt.title('F0.5 Score vs. No. of epochs');
+
+
+    plot_fbeta(history)
