@@ -3,6 +3,23 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 from PIL import Image
+import torchvision.transforms as transforms
+
+
+# Transformations are not done yet
+train_transform = transforms.Compose([
+    transforms.Resize((150, 150)),
+    # transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+])
+
+val_transform = transforms.Compose([
+    transforms.Resize((150, 150)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+])
+
 
 # Load data and annotations
 annotations_path = 'annotations.csv'
@@ -23,7 +40,7 @@ for filename in image_filenames:
     if material:
         image_label_mapping[filename] = material
 
-print(image_label_mapping)
+# print(image_label_mapping)
 
 # Convert labels to binary: 1 if 'plastic', 0 otherwise
 binary_image_label_mapping = {
@@ -31,7 +48,7 @@ binary_image_label_mapping = {
     for filename, material in image_label_mapping.items()
 }
 
-print("Binary Image Label Mapping:", binary_image_label_mapping)
+# print("Binary Image Label Mapping:", binary_image_label_mapping)
 
 
 class MaterialDataset(Dataset):
@@ -61,3 +78,7 @@ class MaterialDataset(Dataset):
         label = torch.tensor(label, dtype=torch.float32)
 
         return image, label
+
+
+
+__all__ = ["MaterialDataset", "binary_image_label_mapping", "image_dir"]

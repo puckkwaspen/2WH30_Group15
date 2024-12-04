@@ -11,78 +11,21 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
     import torch.nn as nn
     import torch.nn.functional as F
+    import random
     import os
     import pandas as pd
     from torch.utils.data import Dataset
     from PIL import Image
+    from data_preparation import MaterialDataset, binary_image_label_mapping, image_dir, train_transform, val_transform
 
-    # Load data and annotations
-    annotations_path = 'annotations.csv'
-    annotations = pd.read_csv(annotations_path)
-
-    image_dir = 'data/images'
-    image_filenames = os.listdir(image_dir)
-
-    # Map id to Material
-    id_to_material = annotations.set_index('No.')['Material'].to_dict()
-
-    # Extract ids from image names and map
-    image_label_mapping = {}
-    for filename in image_filenames:
-        identifier = int(filename.split('_')[0])
-        material = id_to_material.get(identifier, None)
-        if material:
-            image_label_mapping[filename] = material
-
-    print(image_label_mapping)
-
-    # Convert labels to binary: 1 if 'plastic', 0 otherwise
-    binary_image_label_mapping = {
-        filename: 1 if material == 'plastic' else 0
-        for filename, material in image_label_mapping.items()
-    }
-
-    #print("Binary Image Label Mapping:", binary_image_label_mapping)
+    # Set the seed for reproducibility
+    seed = 42
+    torch.manual_seed(seed)
+    random.seed(seed)
 
 
-
-    class MaterialDataset(Dataset):
-        def __init__(self, image_dir, label_mapping, transform=None):
-            self.image_dir = image_dir
-            self.label_mapping = label_mapping
-            self.image_filenames = list(label_mapping.keys())
-            self.transform = transform
-
-        def __len__(self):
-            return len(self.image_filenames)
-
-        def __getitem__(self, idx):
-            # Get image filename and label
-            filename = self.image_filenames[idx]
-            label = self.label_mapping[filename]
-
-            # Load image
-            image_path = os.path.join(self.image_dir, filename)
-            image = Image.open(image_path).convert("RGB")  # Convert to RGB
-
-            # Apply transformations, if any
-            if self.transform:
-                image = self.transform(image)
-
-            # Convert label to tensor
-            label = torch.tensor(label, dtype=torch.float32)
-
-            return image, label
-
-
-    # Dataset preparation
-    transform = transforms.Compose([
-        transforms.Resize((150, 150)),
-        transforms.ToTensor()
-    ])
-
-    # Initialize the dataset with binary labels
-    dataset = MaterialDataset(image_dir=image_dir, label_mapping=binary_image_label_mapping, transform=transform)
+    # Initialize dataset
+    dataset = MaterialDataset(image_dir=image_dir, label_mapping=binary_image_label_mapping)
 
     # Define percentages for train, validation, and test splits
     train_percentage = 0.8
@@ -98,6 +41,10 @@ if __name__ == '__main__':
     # Print lengths of splits
     print(f"Length of Train Data : {len(train_data)}")
     print(f"Length of Test Data : {len(test_data)}")
+
+    # Assign specific transforms for training and validation datasets
+    train_data.dataset.transform = train_transform
+    test_data.dataset.transform = val_transform
 
     # Define batch size
     batch_size = 10
@@ -176,6 +123,8 @@ if __name__ == '__main__':
 
         def forward(self, xb):
             return self.network(xb)
+
+
     def precision_and_recall(outputs, labels):
         preds = (outputs > 0.5).float()
         tp = torch.sum((preds == 1) & (labels == 1)).item()  # True Positives
@@ -263,7 +212,7 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = MaterialClassificationCNN().to(device)
 
-    history = fit(epochs=10, lr=0.001, model=model, train_loader=train_dl, test_loader=test_dl)
+    history = fit(epochs=2, lr=0.001, model=model, train_loader=train_dl, test_loader=test_dl)
 
     def plot_accuracies(history):
         """ Plot the history of accuracies"""
