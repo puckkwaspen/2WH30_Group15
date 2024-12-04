@@ -19,7 +19,7 @@ if __name__ == '__main__':
     from data_preparation import MaterialDataset, binary_image_label_mapping, image_dir, train_transform, val_transform
 
     # Set the seed for reproducibility
-    seed = 42
+    seed = 987
     torch.manual_seed(seed)
     random.seed(seed)
 
@@ -212,7 +212,7 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = MaterialClassificationCNN().to(device)
 
-    history = fit(epochs=2, lr=0.001, model=model, train_loader=train_dl, test_loader=test_dl)
+    history = fit(epochs=10, lr=0.001, model=model, train_loader=train_dl, test_loader=test_dl)
 
     def plot_accuracies(history):
         """ Plot the history of accuracies"""
