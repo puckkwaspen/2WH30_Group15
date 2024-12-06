@@ -121,8 +121,24 @@ if __name__ == '__main__':
                 nn.Sigmoid()  # For binary classification
             )
 
+# Uncomment this and comment lines 119-123 if we want to use 224x224
+            # self.flattened_size = 128 * 28 * 28
+            #
+            # self.fc = nn.Sequential(
+            #     nn.Flatten(),
+            #     nn.Linear(self.flattened_size, 128),  # Match input size here
+            #     nn.ReLU(),
+            #     nn.Linear(128, 1),
+            #     nn.Sigmoid()  # Binary classification
+            # )
+
         def forward(self, xb):
             return self.network(xb)
+
+# If we want to use 224x224 images
+        # def forward(self, xb):
+        #     xb = self.network(xb)
+        #     return self.fc(xb)
 
 
     def precision_and_recall(outputs, labels):

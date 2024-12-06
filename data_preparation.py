@@ -2,20 +2,32 @@ import os
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
-from PIL import Image
+from PIL import Image, ImageOps
 import torchvision.transforms as transforms
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
 
+
+# Custom Transform for Resize and Square
+class ResizeAndSquare:
+    def __init__(self, size):
+        self.size = size
+
+    def __call__(self, image):
+        # Resize with padding to maintain aspect ratio
+        image = ImageOps.pad(image, (self.size, self.size), color=(0, 0, 0))
+        return image
 
 # Transformations are not done yet
 train_transform = transforms.Compose([
-    transforms.Resize((150, 150)),
-    # transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+    ResizeAndSquare(150),
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
 
 val_transform = transforms.Compose([
-    transforms.Resize((150, 150)),
+    ResizeAndSquare(150),
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
@@ -70,6 +82,9 @@ class MaterialDataset(Dataset):
         image_path = os.path.join(self.image_dir, filename)
         image = Image.open(image_path).convert("RGB")  # Convert to RGB
 
+        # Comment if no CLAHE: Apply CLAHE for histogram equalization
+        image = self.apply_clahe(image)
+
         # Apply transformations, if any
         if self.transform:
             image = self.transform(image)
@@ -79,6 +94,27 @@ class MaterialDataset(Dataset):
 
         return image, label
 
+    @staticmethod
+    def apply_clahe(image):
+        # Convert PIL image to OpenCV format (numpy array)
+        image_np = np.array(image)
+
+        # Convert RGB to LAB color space
+        lab = cv2.cvtColor(image_np, cv2.COLOR_RGB2LAB)
+
+        # Split LAB channels
+        l, a, b = cv2.split(lab)
+
+        # Apply CLAHE to the L channel
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        l = clahe.apply(l)
+
+        # Merge LAB channels and convert back to RGB
+        lab = cv2.merge((l, a, b))
+        image_np = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
+
+        # Convert back to PIL Image
+        return Image.fromarray(image_np)
 
 
 __all__ = ["MaterialDataset", "binary_image_label_mapping", "image_dir"]
