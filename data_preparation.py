@@ -6,7 +6,6 @@ from PIL import Image, ImageOps
 import torchvision.transforms as transforms
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
 
 
 # Custom Transform for Resize and Square
@@ -37,7 +36,7 @@ val_transform = transforms.Compose([
 annotations_path = 'annotations.csv'
 annotations = pd.read_csv(annotations_path)
 
-image_dir = 'data/images'
+image_dir = 'i190_data'
 image_filenames = os.listdir(image_dir)
 
 # Map id to Material
@@ -46,12 +45,10 @@ id_to_material = annotations.set_index('No.')['Material'].to_dict()
 # extract ids from image names and map
 image_label_mapping = {}
 for filename in image_filenames:
-    identifier = int(filename.split('_')[0])
-
-    material = id_to_material.get(identifier, None)
+    base_identifier = int(filename.split('_')[0])  # Extract the numeric identifier
+    material = id_to_material.get(base_identifier, None)  # Lookup using base identifier
     if material:
         image_label_mapping[filename] = material
-
 # print(image_label_mapping)
 
 # Convert labels to binary: 1 if 'plastic', 0 otherwise
@@ -118,3 +115,4 @@ class MaterialDataset(Dataset):
 
 
 __all__ = ["MaterialDataset", "binary_image_label_mapping", "image_dir"]
+

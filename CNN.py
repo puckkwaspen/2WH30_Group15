@@ -1,4 +1,4 @@
-### This is our first attempt at a CNN
+### Binary classification of plastic vs non-plastic materials with CNN
 
 if __name__ == '__main__':
     import torch
@@ -8,7 +8,6 @@ if __name__ == '__main__':
     from torch.utils.data.dataloader import DataLoader
     from torch.utils.data import random_split
     from torchvision.utils import make_grid
-    import matplotlib.pyplot as plt
     import torch.nn as nn
     import torch.nn.functional as F
     import random
@@ -16,7 +15,12 @@ if __name__ == '__main__':
     import pandas as pd
     from torch.utils.data import Dataset
     from PIL import Image
+
     from data_preparation import MaterialDataset, binary_image_label_mapping, image_dir, train_transform, val_transform
+    from itertools import product
+    from sklearn.model_selection import KFold
+    from sklearn.model_selection import train_test_split
+    from torch.utils.data import Subset
 
     # Set the seed for reproducibility
     seed = 987
@@ -24,121 +28,280 @@ if __name__ == '__main__':
     random.seed(seed)
 
 
+    # Define transformations for training and validation
+    train_transform = transforms.Compose([
+        transforms.Resize((128, 128)),  # Resize images to a fixed size
+        transforms.ToTensor(),  # Convert to tensor
+        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  # Normalize
+    ])
+
+    # val_transform = transforms.Compose([
+    #     transforms.Resize((128, 128)),
+    #     transforms.ToTensor(),
+    #     transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+    # ])
+
     # Initialize dataset
     dataset = MaterialDataset(image_dir=image_dir, label_mapping=binary_image_label_mapping)
 
-    # Define percentages for train, validation, and test splits
-    train_percentage = 0.8
-    test_percentage = 0.2
+    test_transform = transforms.Compose([
+        transforms.ToTensor()
+    ])
 
-    # Calculate lengths for each split
-    train_size = int(train_percentage * len(dataset))
-    test_size = len(dataset) - train_size  # Remaining for the test set
+    # Create training and validation datasets with transformations
+    train_dataset = MaterialDataset(
+        image_dir=image_dir,
+        label_mapping=binary_image_label_mapping,
+        transform=train_transform  # Full transformation for training
+    )
 
-    # Split the dataset
-    train_data, test_data = random_split(dataset, [train_size, test_size])
+    val_dataset = MaterialDataset(
+        image_dir=image_dir,
+        label_mapping=binary_image_label_mapping,
+        transform=test_transform  # Minimal transformation for testing
+    )
 
-    # Print lengths of splits
-    print(f"Length of Train Data : {len(train_data)}")
-    print(f"Length of Test Data : {len(test_data)}")
+    train_indices, test_indices = train_test_split(range(len(dataset)), test_size=0.2, random_state=seed)
 
-    # Assign specific transforms for training and validation datasets
-    train_data.dataset.transform = train_transform
-    test_data.dataset.transform = val_transform
-
-    # Define batch size
-    batch_size = 10
-
-    # Create data loaders with batching
-    train_dl = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
-    test_dl = DataLoader(test_data, batch_size=batch_size * 2, shuffle=False, num_workers=0, pin_memory=True)
-
-    # Print a message indicating the loader sizes
-    print(f"Train DataLoader contains {len(train_dl)} batches")
-    print(f"Test DataLoader contains {len(test_dl)} batches")
+    # Create subsets for training and testing
+    train_data = Subset(train_dataset, train_indices)
+    test_data = Subset(val_dataset, test_indices)
+    # Split the dataset 80-20
 
 
-    def show_batch(dl):
-        """Plot images grid of single batch"""
-        for images, labels in dl:
-            fig, ax = plt.subplots(figsize=(16, 12))
-            ax.set_xticks([])
-            ax.set_yticks([])
-            ax.imshow(make_grid(images, nrow=16).permute(1, 2, 0))
-            break
-
-
-    show_batch(train_dl)
-
-    # class ImageClassificationBase(nn.Module):
+# The commented code is just for visualization, not needed right now
+    # def show_batch(dl):
+    #     """Plot images grid of single batch"""
+    #     for images, labels in dl:
+    #         fig, ax = plt.subplots(figsize=(16, 12))
+    #         ax.set_xticks([])
+    #         ax.set_yticks([])
+    #         ax.imshow(make_grid(images, nrow=16).permute(1, 2, 0))
+    #         break
     #
-    #     def training_step(self, batch):
-    #         images, labels = batch
-    #         out = self(images)  # Generate predictions
-    #         loss = F.cross_entropy(out, labels)  # Calculate loss
-    #         return loss
     #
-    #     def validation_step(self, batch):
-    #         images, labels = batch
-    #         out = self(images)  # Generate predictions
-    #         loss = F.cross_entropy(out, labels)  # Calculate loss
-    #         acc = accuracy(out, labels)  # Calculate accuracy
-    #         return {'val_loss': loss.detach(), 'val_acc': acc}
-    #
-    #     def validation_epoch_end(self, outputs):
-    #         batch_losses = [x['val_loss'] for x in outputs]
-    #         epoch_loss = torch.stack(batch_losses).mean()  # Combine losses
-    #         batch_accs = [x['val_acc'] for x in outputs]
-    #         epoch_acc = torch.stack(batch_accs).mean()  # Combine accuracies
-    #         return {'val_loss': epoch_loss.item(), 'val_acc': epoch_acc.item()}
-    #
-    #     def epoch_end(self, epoch, result):
-    #         print("Epoch [{}], train_loss: {:.4f}, val_loss: {:.4f}, val_acc: {:.4f}".format(
-    #             epoch, result['train_loss'], result['val_loss'], result['val_acc']))
-
+    # show_batch(train_dl)
 
     # Define a simple CNN for binary classification
-    class MaterialClassificationCNN(nn.Module):
-        def __init__(self):
-            super(MaterialClassificationCNN, self).__init__()
-            self.network = nn.Sequential(
-                nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1),
-                nn.ReLU(),
-                nn.MaxPool2d(2, 2),
+    # Changing the CNN architecture so that experiments can be run
+    # Architecture Search Configuration
+    architecture_space = {
+        'num_conv_layers': [2, 3, 4],  # Vary number of conv layers
+        'filters': [16, 32, 64],  # Number of filters in conv layers
+        'kernel_sizes': [3, 5],  # Kernel size options
+        'use_batch_norm': [True, False],  # Batch norm inclusion
+        'dropout_rate': [0.2, 0.4, 0.5],  # Dropout options
+        'pooling_type': ['max', 'avg'],  # Pooling types
+        'num_fc_layers': [1, 2],  # Number of fully connected layers
+        'fc_units': [128, 256],  # Units in FC layers
+    }
 
-                nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
-                nn.ReLU(),
-                nn.MaxPool2d(2, 2),
 
-                nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
-                nn.ReLU(),
-                nn.MaxPool2d(2, 2),
+    # Define a Configurable CNN with Dynamic Architecture
+    class ConfigurableCNN(nn.Module):
+        def __init__(self, arch_config):
+            super(ConfigurableCNN, self).__init__()
+            self.layers = nn.ModuleList()
+            in_channels = 3
 
-                nn.Flatten(),
-                nn.Linear(128 * 18 * 18, 128),
-                nn.ReLU(),
-                nn.Linear(128, 1),
-                nn.Sigmoid()  # For binary classification
-            )
+            # Convolutional layers
+            for i in range(arch_config['num_conv_layers']):
+                out_channels = arch_config['filters']
+                kernel_size = arch_config['kernel_sizes']
+                self.layers.append(nn.Conv2d(in_channels, out_channels, kernel_size, padding=kernel_size // 2))
+                if arch_config['use_batch_norm']:
+                    self.layers.append(nn.BatchNorm2d(out_channels))
+                self.layers.append(nn.ReLU())
+                pooling = nn.MaxPool2d(2) if arch_config['pooling_type'] == 'max' else nn.AvgPool2d(2)
+                self.layers.append(pooling)
+                in_channels = out_channels
 
-# Uncomment this and comment lines 119-123 if we want to use 224x224
-            # self.flattened_size = 128 * 28 * 28
-            #
-            # self.fc = nn.Sequential(
-            #     nn.Flatten(),
-            #     nn.Linear(self.flattened_size, 128),  # Match input size here
-            #     nn.ReLU(),
-            #     nn.Linear(128, 1),
-            #     nn.Sigmoid()  # Binary classification
-            # )
+            # Adaptive Pooling
+            self.layers.append(nn.AdaptiveAvgPool2d((1, 1)))
 
-        def forward(self, xb):
-            return self.network(xb)
+            # Fully connected layers
+            fc_layers = []
+            input_dim = arch_config['filters']
+            for _ in range(arch_config['num_fc_layers']):
+                fc_layers.append(nn.Linear(input_dim, arch_config['fc_units']))
+                fc_layers.append(nn.ReLU())
+                fc_layers.append(nn.Dropout(arch_config['dropout_rate']))
+                input_dim = arch_config['fc_units']
+            fc_layers.append(nn.Linear(input_dim, 1))  # Binary output
+            self.fc = nn.Sequential(*fc_layers)
+
+        def forward(self, x):
+            for layer in self.layers:
+                x = layer(x)
+            x = torch.flatten(x, 1)
+            return torch.sigmoid(self.fc(x))
+
+
+
+    # Evaluate Configurations with Cross-Validation
+    def cross_validate_model(model_class, train_data, arch_config, k=5, epochs=10, lr=0.001, batch_size=32,
+                             optimizer=torch.optim.Adam, weight_decay=0.0):
+        kf = KFold(n_splits=k, shuffle=True, random_state=seed)
+        results = []
+
+        for fold, (train_idx, val_idx) in enumerate(kf.split(train_data)):
+            print(f"Fold {fold + 1}/{k}")
+
+            train_sampler = torch.utils.data.SubsetRandomSampler(train_idx)
+            val_sampler = torch.utils.data.SubsetRandomSampler(val_idx)
+
+            train_loader = DataLoader(train_data, batch_size=batch_size, sampler=train_sampler)
+            val_loader = DataLoader(train_data, batch_size=batch_size, sampler=val_sampler)
+
+            # Initialize model using the lambda function and pass the same arch_config for all folds
+            model = model_class(arch_config=arch_config).to(device)
+            opt = optimizer(model.parameters(), lr=lr, weight_decay=weight_decay)
+            loss_fn = nn.BCELoss()
+
+            # Training Loop
+            for epoch in range(epochs):
+                model.train()
+                for images, labels in train_loader:
+                    images, labels = images.to(device), labels.to(device).unsqueeze(1)
+                    outputs = model(images)
+                    loss = loss_fn(outputs, labels)
+                    opt.zero_grad()
+                    loss.backward()
+                    opt.step()
+
+            # Validation
+            model.eval()
+            val_loss, val_acc = 0, 0
+            with torch.no_grad():
+                for images, labels in val_loader:
+                    images, labels = images.to(device), labels.to(device).unsqueeze(1)
+                    outputs = model(images)
+                    val_loss += loss_fn(outputs, labels).item()
+                    val_acc += accuracy(outputs, labels)
+
+            results.append({'loss': val_loss / len(val_loader), 'accuracy': val_acc / len(val_loader)})
+
+        return results
+
+        # Uncomment this and comment lines 119-123 if we want to use 224x224
+        #     self.flattened_size = 128 * 28 * 28
+        #
+        #     self.fc = nn.Sequential(
+        #         nn.Flatten(),
+        #         nn.Linear(self.flattened_size, 128),  # Match input size here
+        #         nn.ReLU(),
+        #         nn.Linear(128, 1),
+        #         nn.Sigmoid()  # Binary classification
+        #     )
+
+
+
 
 # If we want to use 224x224 images
         # def forward(self, xb):
         #     xb = self.network(xb)
         #     return self.fc(xb)
+
+    def fit(epochs, lr, model, train_loader, test_loader, opt_func=torch.optim.SGD):
+        history = []
+        optimizer = opt_func(model.parameters(), lr)
+        for epoch in range(epochs):
+
+            model.train()
+            train_losses = []
+            for images, labels in train_loader:
+                images, labels = images.to(device), labels.to(device)
+                outputs = model(images)
+                loss = F.binary_cross_entropy(outputs, labels.unsqueeze(1))
+                train_losses.append(loss.item())
+
+                loss.backward()
+                optimizer.step()
+                optimizer.zero_grad()
+
+            result = evaluate(model, test_loader)
+            result['train_loss'] = sum(train_losses) / len(train_losses)
+            print(f"Epoch [{epoch + 1}/{epochs}], Train Loss: {result['train_loss']:.4f}, "
+                  f"Test Loss: {result['loss']:.4f}, Accuracy: {result['accuracy']:.4f}, "
+                  f"F0.5: {result['f0.5']:.4f}")  # Adding the f0.5 to the print statement
+            history.append(result)
+        return history
+
+#Implementing k-fold CV
+
+    def random_search_with_cv(train_data, param_grid, architecture_space, n_iter=10, k=5):
+        keys, values = zip(*param_grid.items())
+        param_combinations = list(product(*values))
+        random.shuffle(param_combinations)
+        param_combinations = param_combinations[:min(n_iter, len(param_combinations))]
+
+        results = []
+        best_performance = float('-inf')
+        best_params = None
+
+        for i, params in enumerate(param_combinations):
+            print(f"Iteration {i + 1}/{n_iter} with params: {params}")
+
+            # Unpack hyperparameters
+            param_dict = dict(zip(keys, params))
+            batch_size = param_dict['batch_size']
+            lr = param_dict['lr']
+            epochs = param_dict['epochs']
+            optimizer = param_dict['optimizer']
+            dropout_rate = param_dict['dropout_rate']
+            pooling_after_conv = param_dict['pooling_after_conv']
+            weight_decay = param_dict['weight_decay']
+
+            # Create architecture configuration
+            arch_config = {
+                'num_conv_layers': random.choice(architecture_space['num_conv_layers']),
+                'filters': random.choice(architecture_space['filters']),
+                'kernel_sizes': random.choice(architecture_space['kernel_sizes']),
+                'use_batch_norm': random.choice(architecture_space['use_batch_norm']),
+                'dropout_rate': dropout_rate,
+                'pooling_type': random.choice(architecture_space['pooling_type']),
+                'num_fc_layers': random.choice(architecture_space['num_fc_layers']),
+                'fc_units': random.choice(architecture_space['fc_units']),
+            }
+
+            print(f"Testing architecture configuration: {arch_config}")
+
+            # Perform cross-validation with combined params
+            fold_results = cross_validate_model(
+                model_class=lambda arch_config=arch_config: ConfigurableCNN(arch_config),
+                train_data=train_data,
+                arch_config=arch_config,
+                k=k,
+                epochs=epochs,
+                lr=lr,
+                batch_size=batch_size,
+                optimizer=optimizer,
+                weight_decay=weight_decay
+            )
+
+            # Calculate mean accuracy across folds
+            mean_accuracy = sum(f['accuracy'] for f in fold_results) / len(fold_results)
+
+            # Store results and track the best configuration
+            results.append((param_dict, arch_config, mean_accuracy))
+            if mean_accuracy > best_performance:
+                best_performance = mean_accuracy
+                best_params = (param_dict, arch_config)
+
+        print(
+            f"Best Parameters: {best_params[0]} with Architecture: {best_params[1]} and Mean Accuracy: {best_performance:.4f}")
+        return results, best_params
+
+
+    param_grid = {
+        'lr': [0.001, 0.01, 0.0001, 0.1],  # Learning rate options
+        'epochs': [5, 10, 15],  # Number of epochs to try
+        'batch_size': [8, 16, 32, 64],  # Batch sizes to test
+        'optimizer': [torch.optim.SGD, torch.optim.Adam],  # Optimizer options
+        'pooling_after_conv': [True, False],  # Whether to pool after convolution
+        'dropout_rate': [0.1, 0.3, 0.5, 0.7],  # Dropout rates
+        'weight_decay': [0.0, 0.01, 1e-4, 1e-5]  # Weight decay (L2 regularization)
+    }
 
 
     def precision_and_recall(outputs, labels):
@@ -163,107 +326,100 @@ if __name__ == '__main__':
         preds = (outputs > 0.5).float()
         return torch.tensor(torch.sum(preds == labels).item() / len(preds))
 
-    @torch.no_grad()
-    #def evaluate(model, test_loader):
-       # model.eval()
-       # test_losses, test_accs = [], []
-       # for images, labels in test_loader:
-           # images, labels = images.to(device), labels.to(device)
-           # outputs = model(images)
-           # loss = F.binary_cross_entropy(outputs, labels.unsqueeze(1))
-           # acc = accuracy(outputs, labels.unsqueeze(1))
-           # test_losses.append(loss.item())
-           # test_accs.append(acc.item())
-        #return {'loss': sum(test_losses) / len(test_losses), 'accuracy': sum(test_accs) / len(test_accs)}
-
 
     @torch.no_grad()
-    def evaluate(model, test_loader):
+    @torch.no_grad()
+    def evaluate(model, loader):
         model.eval()
-        test_losses, test_accs, test_fbeta = [], [], [] # adding a new list
-        for images, labels in test_loader:
-            images, labels = images.to(device), labels.to(device)
+        losses, accs, fbetas = [], [], []
+        for images, labels in loader:
+            images, labels = images.to(device), labels.to(device).unsqueeze(1)
             outputs = model(images)
-            loss = F.binary_cross_entropy(outputs, labels.unsqueeze(1))
-            acc = accuracy(outputs, labels.unsqueeze(1))
-            fbeta = fbeta_score(outputs, labels.unsqueeze(1), beta=0.5) # using the f0.5 score
-            test_losses.append(loss.item())
-            test_accs.append(acc.item())
-            test_fbeta.append(fbeta)
+            loss = F.binary_cross_entropy(outputs, labels)
+            acc = accuracy(outputs, labels)
+            fbeta = fbeta_score(outputs, labels, beta=0.5)
+            losses.append(loss.item())
+            accs.append(acc.item())
+            fbetas.append(fbeta)
+
         return {
-            'loss': sum(test_losses) / len(test_losses),
-            'accuracy': sum(test_accs) / len(test_accs),
-            'f0.5': sum(test_fbeta) / len(test_fbeta)
+            'loss': sum(losses) / len(losses),
+            'accuracy': sum(accs) / len(accs),
+            'f0.5': sum(fbetas) / len(fbetas)
         }
 
 
+    def evaluate_final_model(train_data, test_data, best_params):
+        # Unpack best hyperparameters and architecture
+        param_dict, best_architecture = best_params
+        batch_size = param_dict['batch_size']
+        epochs = param_dict['epochs']
+        lr = param_dict['lr']
+        optimizer = param_dict['optimizer']
+        weight_decay = param_dict['weight_decay']
 
-    def fit(epochs, lr, model, train_loader, test_loader, opt_func=torch.optim.SGD):
-        history = []
-        optimizer = opt_func(model.parameters(), lr)
-        for epoch in range(epochs):
+        # Create final DataLoaders
+        train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=0)
+        test_loader = DataLoader(test_data, batch_size=batch_size * 2, shuffle=False, num_workers=0)
 
-            model.train()
-            train_losses = []
-            for images, labels in train_loader:
-                images, labels = images.to(device), labels.to(device)
-                outputs = model(images)
-                loss = F.binary_cross_entropy(outputs, labels.unsqueeze(1))
-                train_losses.append(loss.item())
+        # Train the final model using the best architecture
+        model = ConfigurableCNN(best_architecture).to(device)
+        fit(
+            epochs=epochs,
+            lr=lr,
+            model=model,
+            train_loader=train_loader,
+            test_loader=test_loader,
+            opt_func=optimizer
+        )
 
-                loss.backward()
-                optimizer.step()
-                optimizer.zero_grad()
-
-            result = evaluate(model, test_loader)
-            result['train_loss'] = sum(train_losses) / len(train_losses)
-            print(f"Epoch [{epoch + 1}/{epochs}], Train Loss: {result['train_loss']:.4f}, "
-                  f"Test Loss: {result['loss']:.4f}, Accuracy: {result['accuracy']:.4f}, "
-                  f"F0.5: {result['f0.5']:.4f}") # Adding the f0.5 to the print statement
-            history.append(result)
-        return history
+        # Evaluate the trained model on the test set
+        test_results = evaluate(model, test_loader)
+        print("Final Test Results:", test_results)
+        return test_results
 
 
-    # Initialize and train the model
+    # Initialize device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = MaterialClassificationCNN().to(device)
 
-    history = fit(epochs=10, lr=0.001, model=model, train_loader=train_dl, test_loader=test_dl)
+    # Perform random search with cross-validation to find the best hyperparameters
+    results, best_params = random_search_with_cv(
+        train_data=train_data,
+        param_grid=param_grid,
+        architecture_space=architecture_space,
+        n_iter=1,
+        k=3
+    )
 
-    def plot_accuracies(history):
-        """ Plot the history of accuracies"""
-        accuracies = [x['accuracy'] for x in history]
-        plt.plot(accuracies, '-x')
-        plt.xlabel('epoch')
-        plt.ylabel('accuracy')
-        plt.title('Accuracy vs. No. of epochs');
+    print(f"Best Hyperparameters: {best_params[0]}")
+    print(f"Best Architecture: {best_params[1]}")
 
+    # Train the final model using the best hyperparameters and architecture
+    param_dict, best_architecture = best_params  # Unpack best hyperparameters and architecture
 
-    plot_accuracies(history)
+    # Extract hyperparameters from best_params
+    batch_size = param_dict['batch_size']
+    epochs = param_dict['epochs']
+    lr = param_dict['lr']
+    optimizer = param_dict['optimizer']
 
+    # Create DataLoaders with the best batch size
+    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=0)
+    test_loader = DataLoader(test_data, batch_size=batch_size * 2, shuffle=False, num_workers=0)
 
-    def plot_losses(history):
-        """ Plot the losses in each epoch"""
-        train_losses = [x.get('train_loss') for x in history]
-        test_losses = [x['loss'] for x in history]
-        plt.plot(train_losses, '-bx')
-        plt.plot(test_losses, '-rx')
-        plt.xlabel('epoch')
-        plt.ylabel('loss')
-        plt.legend(['Training', 'Validation'])
-        plt.title('Loss vs. No. of epochs');
+    # Initialize the final model with the best architecture
+    model = ConfigurableCNN(arch_config=best_architecture).to(device)
 
+    # Train the model with the best hyperparameters
+    history = fit(
+        epochs=epochs,
+        lr=lr,
+        model=model,
+        train_loader=train_loader,
+        test_loader=test_loader,
+        opt_func=optimizer
+    )
 
-    plot_losses(history)
-
-
-    def plot_fbeta(history):
-        """Plot the history of F0.5 scores"""
-        fbetas = [x['f0.5'] for x in history]
-        plt.plot(fbetas, '-gx')
-        plt.xlabel('epoch')
-        plt.ylabel('F0.5')
-        plt.title('F0.5 Score vs. No. of epochs');
-
-
-    plot_fbeta(history)
+    # Evaluate the final model on the test set
+    test_results = evaluate(model, test_loader)
+    print("Final Test Results:", test_results)
