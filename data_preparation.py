@@ -6,7 +6,8 @@ from PIL import Image, ImageOps
 import torchvision.transforms as transforms
 import cv2
 import numpy as np
-
+from imblearn.over_sampling import SMOTE
+from collections import Counter
 
 # Custom Transform for Resize and Square
 class ResizeAndSquare:
@@ -37,6 +38,8 @@ annotations_path = 'annotations.csv'
 annotations = pd.read_csv(annotations_path)
 
 image_dir = 'i190_data'
+synthetic_image_dir = 'data/synthetic_images'
+os.makedirs(synthetic_image_dir, exist_ok=True)  # Ensure synthetic directory exists
 image_filenames = os.listdir(image_dir)
 
 # Map id to Material
@@ -60,9 +63,58 @@ binary_image_label_mapping = {
 # print("Binary Image Label Mapping:", binary_image_label_mapping)
 
 
+
+# Prepare features for SMOTE
+def prepare_features_and_labels(image_dir, label_mapping):
+    features = []
+    labels = []
+    for filename, label in label_mapping.items():
+        image_path = os.path.join(image_dir, filename)
+        image = Image.open(image_path).convert("RGB")  # Convert to RGB
+        image = image.resize((150, 150))  # Match transform size
+        features.append(np.array(image).flatten())  # Flatten image
+        labels.append(label)
+    return np.array(features), np.array(labels)
+
+# Extract features and labels
+features, labels = prepare_features_and_labels(image_dir, binary_image_label_mapping)
+
+# Apply SMOTE to balance the dataset
+print("Applying SMOTE to balance the dataset...")
+smote = SMOTE(random_state=42)
+augmented_features, augmented_labels = smote.fit_resample(features, labels)
+
+print(f"Original dataset size: {len(labels)}")
+print(f"Augmented dataset size: {len(augmented_labels)}")
+
+# Save synthetic images
+for i, feature in enumerate(augmented_features[len(labels):]):  # Only save synthetic samples
+    image = feature.reshape(150, 150, 3).astype(np.uint8)
+    synthetic_filename = f"aug_{i}.jpg"
+    synthetic_path = os.path.join(synthetic_image_dir, synthetic_filename)  # Save directly in synthetic_image_dir
+    Image.fromarray(image).save(synthetic_path)
+
+# Update binary_image_label_mapping to include synthetic images
+for i, label in enumerate(augmented_labels[len(labels):]):
+    binary_image_label_mapping[f"aug_{i}.jpg"] = label  # Use only filename
+
+
+# Combine real and synthetic directories
+full_image_dir = [image_dir, synthetic_image_dir]
+
+# Check class distribution after SMOTE
+class_counts = Counter(augmented_labels)
+total_images = len(augmented_labels)
+class_proportions = {cls: count / total_images for cls, count in class_counts.items()}
+
+print("Class Distribution After SMOTE:")
+for cls, count in class_counts.items():
+    print(f"Class {cls}: {count} images ({class_proportions[cls]*100:.2f}%)")
+
+
 class MaterialDataset(Dataset):
-    def __init__(self, image_dir, label_mapping, transform=None):
-        self.image_dir = image_dir
+    def __init__(self, image_dirs, label_mapping, transform=None):
+        self.image_dirs = image_dirs  # List of directories (real + synthetic)
         self.label_mapping = label_mapping
         self.image_filenames = list(label_mapping.keys())
         self.transform = transform
@@ -75,11 +127,17 @@ class MaterialDataset(Dataset):
         filename = self.image_filenames[idx]
         label = self.label_mapping[filename]
 
+        # Determine directory: check if file is synthetic
+        if filename.startswith("aug_"):
+            image_dir = self.image_dirs[1]  # Synthetic images directory
+        else:
+            image_dir = self.image_dirs[0]  # Real images directory
+
         # Load image
-        image_path = os.path.join(self.image_dir, filename)
+        image_path = os.path.join(image_dir, filename)
         image = Image.open(image_path).convert("RGB")  # Convert to RGB
 
-        # Comment if no CLAHE: Apply CLAHE for histogram equalization
+        # Apply CLAHE
         image = self.apply_clahe(image)
 
         # Apply transformations, if any
@@ -114,5 +172,5 @@ class MaterialDataset(Dataset):
         return Image.fromarray(image_np)
 
 
-__all__ = ["MaterialDataset", "binary_image_label_mapping", "image_dir"]
 
+_all_ = ["MaterialDataset", "binary_image_label_mapping", "image_dir", "synthetic_image_dir"]

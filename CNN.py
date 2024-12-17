@@ -15,15 +15,16 @@ if __name__ == '__main__':
     import pandas as pd
     from torch.utils.data import Dataset
     from PIL import Image
-
-    from data_preparation import MaterialDataset, binary_image_label_mapping, image_dir, train_transform, val_transform
+    import csv
+    from data_preparation import MaterialDataset, binary_image_label_mapping, image_dir, train_transform, val_transform, synthetic_image_dir
     from itertools import product
     from sklearn.model_selection import KFold
     from sklearn.model_selection import train_test_split
     from torch.utils.data import Subset
+    from collections import Counter
 
     # Set the seed for reproducibility
-    seed = 987
+    seed = 678
     torch.manual_seed(seed)
     random.seed(seed)
 
@@ -35,39 +36,60 @@ if __name__ == '__main__':
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  # Normalize
     ])
 
-    # val_transform = transforms.Compose([
-    #     transforms.Resize((128, 128)),
-    #     transforms.ToTensor(),
-    #     transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-    # ])
+    val_transform = transforms.Compose([ # This should be called test_transform
+        transforms.Resize((128, 128)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+    ])
 
     # Initialize dataset
-    dataset = MaterialDataset(image_dir=image_dir, label_mapping=binary_image_label_mapping)
+    dataset = MaterialDataset(
+        image_dirs=[image_dir, synthetic_image_dir],
+        label_mapping=binary_image_label_mapping,
+        transform= None
+    )
 
-    test_transform = transforms.Compose([
-        transforms.ToTensor()
-    ])
 
     # Create training and validation datasets with transformations
     train_dataset = MaterialDataset(
-        image_dir=image_dir,
+        image_dirs=[image_dir, synthetic_image_dir],
         label_mapping=binary_image_label_mapping,
-        transform=train_transform  # Full transformation for training
+        transform=train_transform
+    )
+    test_dataset = MaterialDataset(
+        image_dirs=[image_dir, synthetic_image_dir],
+        label_mapping=binary_image_label_mapping,
+        transform=val_transform
     )
 
-    val_dataset = MaterialDataset(
-        image_dir=image_dir,
-        label_mapping=binary_image_label_mapping,
-        transform=test_transform  # Minimal transformation for testing
+
+
+    labels = [binary_image_label_mapping[filename] for filename in dataset.image_filenames]
+
+    # Perform stratified split - ensures that the number of class 0 and 1 is the same in the train and test data
+    # Split is 80-20
+    train_indices, test_indices = train_test_split(
+        range(len(dataset)),
+        test_size=0.2,
+        random_state=seed,
+        stratify=labels
     )
-
-    train_indices, test_indices = train_test_split(range(len(dataset)), test_size=0.2, random_state=seed)
-
     # Create subsets for training and testing
     train_data = Subset(train_dataset, train_indices)
-    test_data = Subset(val_dataset, test_indices)
-    # Split the dataset 80-20
+    test_data = Subset(test_dataset, test_indices)
 
+    # Check to see the class distribution- commenting for now since it works
+    # def calculate_class_distribution(subset):
+    #     labels = [subset.dataset.label_mapping[subset.dataset.image_filenames[i]] for i in subset.indices]
+    #     return Counter(labels)
+    #
+    #
+    # # Check class distribution
+    # train_distribution = calculate_class_distribution(Subset(dataset, train_indices))
+    # test_distribution = calculate_class_distribution(Subset(dataset, test_indices))
+    #
+    # print("Training Set Class Distribution:", train_distribution)
+    # print("Test Set Class Distribution:", test_distribution)
 
 # The commented code is just for visualization, not needed right now
     # def show_batch(dl):
@@ -82,7 +104,7 @@ if __name__ == '__main__':
     #
     # show_batch(train_dl)
 
-    # Define a simple CNN for binary classification
+    # Define a CNN for binary classification
     # Changing the CNN architecture so that experiments can be run
     # Architecture Search Configuration
     architecture_space = {
@@ -90,7 +112,7 @@ if __name__ == '__main__':
         'filters': [16, 32, 64],  # Number of filters in conv layers
         'kernel_sizes': [3, 5],  # Kernel size options
         'use_batch_norm': [True, False],  # Batch norm inclusion
-        'dropout_rate': [0.2, 0.4, 0.5],  # Dropout options
+        'dropout_rate': [0.2, 0.4, 0.5, 0.7],  # Dropout options
         'pooling_type': ['max', 'avg'],  # Pooling types
         'num_fc_layers': [1, 2],  # Number of fully connected layers
         'fc_units': [128, 256],  # Units in FC layers
@@ -153,7 +175,6 @@ if __name__ == '__main__':
             train_loader = DataLoader(train_data, batch_size=batch_size, sampler=train_sampler)
             val_loader = DataLoader(train_data, batch_size=batch_size, sampler=val_sampler)
 
-            # Initialize model using the lambda function and pass the same arch_config for all folds
             model = model_class(arch_config=arch_config).to(device)
             opt = optimizer(model.parameters(), lr=lr, weight_decay=weight_decay)
             loss_fn = nn.BCELoss()
@@ -171,16 +192,21 @@ if __name__ == '__main__':
 
             # Validation
             model.eval()
-            val_loss, val_acc = 0, 0
+            val_loss, val_acc, val_fbeta = 0, 0, 0
             with torch.no_grad():
                 for images, labels in val_loader:
                     images, labels = images.to(device), labels.to(device).unsqueeze(1)
                     outputs = model(images)
                     val_loss += loss_fn(outputs, labels).item()
                     val_acc += accuracy(outputs, labels)
+                    val_fbeta += fbeta_score(outputs, labels, beta=0.5)
 
-            results.append({'loss': val_loss / len(val_loader), 'accuracy': val_acc / len(val_loader)})
-
+            # Append all results
+            results.append({
+                'loss': val_loss / len(val_loader),
+                'accuracy': val_acc / len(val_loader),
+                'f0.5': val_fbeta / len(val_loader)
+            })
         return results
 
         # Uncomment this and comment lines 119-123 if we want to use 224x224
@@ -227,9 +253,33 @@ if __name__ == '__main__':
             history.append(result)
         return history
 
-#Implementing k-fold CV
+# Evalueting the test set
+    @torch.no_grad()
+    def evaluate(model, loader):
+        model.eval()
+        losses, accs, fbetas = [], [], []
+        for images, labels in loader:
+            images, labels = images.to(device), labels.to(device).unsqueeze(1)
+            outputs = model(images)
+            loss = F.binary_cross_entropy(outputs, labels)
+            acc = accuracy(outputs, labels)
+            fbeta = fbeta_score(outputs, labels, beta=0.5)
+            losses.append(loss.item())
+            accs.append(acc.item())
+            fbetas.append(fbeta)
+        print("Evaluation Results:", {
+            'loss': sum(losses) / len(losses),
+            'accuracy': sum(accs) / len(accs),
+            'f0.5': sum(fbetas) / len(fbetas)
+        })
 
-    def random_search_with_cv(train_data, param_grid, architecture_space, n_iter=10, k=5):
+        return {
+            'loss': sum(losses) / len(losses),
+            'accuracy': sum(accs) / len(accs),
+            'f0.5': sum(fbetas) / len(fbetas)
+        }
+
+    def random_search_with_cv(train_data, param_grid, architecture_space, n_iter=10, k=5, log_file="results_log.csv"):
         keys, values = zip(*param_grid.items())
         param_combinations = list(product(*values))
         random.shuffle(param_combinations)
@@ -238,6 +288,12 @@ if __name__ == '__main__':
         results = []
         best_performance = float('-inf')
         best_params = None
+
+        # Initialize the CSV log file with a header if it doesn't exist
+        if not os.path.exists(log_file):
+            with open(log_file, mode='w', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow(["Iteration", "Params", "Architecture", "Mean Accuracy", "Mean F0.5"])
 
         for i, params in enumerate(param_combinations):
             print(f"Iteration {i + 1}/{n_iter} with params: {params}")
@@ -248,7 +304,6 @@ if __name__ == '__main__':
             lr = param_dict['lr']
             epochs = param_dict['epochs']
             optimizer = param_dict['optimizer']
-            dropout_rate = param_dict['dropout_rate']
             pooling_after_conv = param_dict['pooling_after_conv']
             weight_decay = param_dict['weight_decay']
 
@@ -258,7 +313,7 @@ if __name__ == '__main__':
                 'filters': random.choice(architecture_space['filters']),
                 'kernel_sizes': random.choice(architecture_space['kernel_sizes']),
                 'use_batch_norm': random.choice(architecture_space['use_batch_norm']),
-                'dropout_rate': dropout_rate,
+                'dropout_rate': random.choice(architecture_space['dropout_rate']),
                 'pooling_type': random.choice(architecture_space['pooling_type']),
                 'num_fc_layers': random.choice(architecture_space['num_fc_layers']),
                 'fc_units': random.choice(architecture_space['fc_units']),
@@ -279,8 +334,16 @@ if __name__ == '__main__':
                 weight_decay=weight_decay
             )
 
-            # Calculate mean accuracy across folds
+            # Calculate mean accuracy and mean F0.5 score across folds
             mean_accuracy = sum(f['accuracy'] for f in fold_results) / len(fold_results)
+            mean_f0_5 = sum(f.get('f0.5', 0.0) for f in fold_results) / len(fold_results)
+
+            print(f"Iteration {i + 1} - Mean Accuracy: {mean_accuracy:.4f}, Mean F0.5: {mean_f0_5:.4f}")
+
+            # Save results to CSV
+            with open(log_file, mode='a', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow([i + 1, param_dict, arch_config,'mean accuracy:', mean_accuracy,'mean F0.5:', mean_f0_5])
 
             # Store results and track the best configuration
             results.append((param_dict, arch_config, mean_accuracy))
@@ -299,7 +362,6 @@ if __name__ == '__main__':
         'batch_size': [8, 16, 32, 64],  # Batch sizes to test
         'optimizer': [torch.optim.SGD, torch.optim.Adam],  # Optimizer options
         'pooling_after_conv': [True, False],  # Whether to pool after convolution
-        'dropout_rate': [0.1, 0.3, 0.5, 0.7],  # Dropout rates
         'weight_decay': [0.0, 0.01, 1e-4, 1e-5]  # Weight decay (L2 regularization)
     }
 
@@ -319,6 +381,7 @@ if __name__ == '__main__':
     def fbeta_score(outputs, labels, beta=0.5):
         precision, recall = precision_and_recall(outputs, labels)
         beta_squared = beta ** 2
+
         fbeta = (1 + beta_squared) * (precision * recall) / (beta_squared * precision + recall + 1e-8)
         return fbeta
 
@@ -327,26 +390,7 @@ if __name__ == '__main__':
         return torch.tensor(torch.sum(preds == labels).item() / len(preds))
 
 
-    @torch.no_grad()
-    @torch.no_grad()
-    def evaluate(model, loader):
-        model.eval()
-        losses, accs, fbetas = [], [], []
-        for images, labels in loader:
-            images, labels = images.to(device), labels.to(device).unsqueeze(1)
-            outputs = model(images)
-            loss = F.binary_cross_entropy(outputs, labels)
-            acc = accuracy(outputs, labels)
-            fbeta = fbeta_score(outputs, labels, beta=0.5)
-            losses.append(loss.item())
-            accs.append(acc.item())
-            fbetas.append(fbeta)
 
-        return {
-            'loss': sum(losses) / len(losses),
-            'accuracy': sum(accs) / len(accs),
-            'f0.5': sum(fbetas) / len(fbetas)
-        }
 
 
     def evaluate_final_model(train_data, test_data, best_params):
@@ -387,15 +431,16 @@ if __name__ == '__main__':
         train_data=train_data,
         param_grid=param_grid,
         architecture_space=architecture_space,
-        n_iter=1,
-        k=3
+        n_iter=2,
+        k=2,
+        log_file="results_log.csv"
     )
 
     print(f"Best Hyperparameters: {best_params[0]}")
     print(f"Best Architecture: {best_params[1]}")
 
     # Train the final model using the best hyperparameters and architecture
-    param_dict, best_architecture = best_params  # Unpack best hyperparameters and architecture
+    param_dict, best_architecture = best_params
 
     # Extract hyperparameters from best_params
     batch_size = param_dict['batch_size']
@@ -423,3 +468,42 @@ if __name__ == '__main__':
     # Evaluate the final model on the test set
     test_results = evaluate(model, test_loader)
     print("Final Test Results:", test_results)
+def save_final_results(experiment_num, best_params, best_architecture, test_results,
+                       filename="test_dataset_results.csv"):
+    # Check if the file exists and needs a header
+    file_exists = os.path.isfile(filename)
+
+    # Open the file in append mode
+    with open(filename, mode='a', newline='') as file:
+        writer = csv.writer(file)
+
+        # Write the header if the file is new
+        if not file_exists:
+            writer.writerow([
+                "Experiment",
+                "Best Parameters",
+                "Best Architecture",
+                "Accuracy",
+                "F0.5"
+            ])
+
+        # Write the result row
+        writer.writerow([
+            f"Experiment {experiment_num}",
+            best_params,
+            best_architecture,
+            test_results['accuracy'],
+            test_results['f0.5']
+        ])
+
+
+# Save the final results after training and evaluation
+experiment_number = 1  # Increment for each experiment run
+save_final_results(
+    experiment_num=experiment_number,
+    best_params=best_params[0],
+    best_architecture=best_params[1],
+    test_results=test_results,
+    filename="test_dataset_results.csv"
+)
+print(f"Results saved to 'test_dataset_results.csv'")
