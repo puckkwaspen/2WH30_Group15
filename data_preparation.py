@@ -19,7 +19,7 @@ class ResizeAndSquare:
         image = ImageOps.pad(image, (self.size, self.size), color=(0, 0, 0))
         return image
 
-# Transformations are not done yet
+# Transformations
 train_transform = transforms.Compose([
     ResizeAndSquare(150),
     transforms.ToTensor(),
@@ -34,12 +34,12 @@ val_transform = transforms.Compose([
 
 
 # Load data and annotations
-annotations_path = 'annotations.csv'
+annotations_path = 'annotations_final.csv'
 annotations = pd.read_csv(annotations_path)
 
 image_dir = 'i190_data'
-synthetic_image_dir = 'data/synthetic_images'
-os.makedirs(synthetic_image_dir, exist_ok=True)  # Ensure synthetic directory exists
+synthetic_image_dir = 'data/synthetic_images' # saving images that will be created with SMOTE
+os.makedirs(synthetic_image_dir, exist_ok=True)
 image_filenames = os.listdir(image_dir)
 
 # Map id to Material
@@ -88,10 +88,10 @@ print(f"Original dataset size: {len(labels)}")
 print(f"Augmented dataset size: {len(augmented_labels)}")
 
 # Save synthetic images
-for i, feature in enumerate(augmented_features[len(labels):]):  # Only save synthetic samples
+for i, feature in enumerate(augmented_features[len(labels):]):
     image = feature.reshape(150, 150, 3).astype(np.uint8)
     synthetic_filename = f"aug_{i}.jpg"
-    synthetic_path = os.path.join(synthetic_image_dir, synthetic_filename)  # Save directly in synthetic_image_dir
+    synthetic_path = os.path.join(synthetic_image_dir, synthetic_filename)
     Image.fromarray(image).save(synthetic_path)
 
 # Update binary_image_label_mapping to include synthetic images

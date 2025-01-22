@@ -16,7 +16,7 @@ if __name__ == '__main__':
     from torch.utils.data import Dataset
     from PIL import Image
     import csv
-    from data_preparation import MaterialDataset, binary_image_label_mapping, image_dir, train_transform, val_transform, synthetic_image_dir
+    from data_preparation2 import MaterialDataset, binary_image_label_mapping, image_dir, train_transform, val_transform
     from itertools import product
     from sklearn.model_selection import KFold
     from sklearn.model_selection import train_test_split
@@ -41,22 +41,22 @@ if __name__ == '__main__':
     torch.manual_seed(seed)
     random.seed(seed)
 
+ 
     # Initialize dataset
     dataset = MaterialDataset(
-        image_dirs=[image_dir, synthetic_image_dir],
+        image_dirs=[image_dir],
         label_mapping=binary_image_label_mapping,
-        transform= None
+        transform=None
     )
 
-
-    # Create training and validation datasets with transformations from dtaa preparation file
+    # Create training and validation datasets with transformations
     train_dataset = MaterialDataset(
-        image_dirs=[image_dir, synthetic_image_dir],
+        image_dirs=[image_dir],
         label_mapping=binary_image_label_mapping,
         transform=train_transform
     )
     test_dataset = MaterialDataset(
-        image_dirs=[image_dir, synthetic_image_dir],
+        image_dirs=[image_dir],
         label_mapping=binary_image_label_mapping,
         transform=val_transform
     )
@@ -90,19 +90,17 @@ if __name__ == '__main__':
     # print("Training Set Class Distribution:", train_distribution)
     # print("Test Set Class Distribution:", test_distribution)
 
-
-    # Architecture Search Configuration- see what each of them does in the report
+    # Architecture Search Configuration
     architecture_space = {
-        'num_conv_layers': [2, 3, 4],
-        'filters': [16, 32, 64],
-        'kernel_sizes': [3, 5],
-        'use_batch_norm': [True, False],
-        'dropout_rate': [0.2, 0.4, 0.5, 0.7],
-        'pooling_type': ['max', 'avg'],
-        'num_fc_layers': [1, 2],
-        'fc_units': [128, 256]
+        'num_conv_layers': [2, 3, 4],  # Vary number of conv layers
+        'filters': [16, 32, 64],  # Number of filters in conv layers
+        'kernel_sizes': [3, 5],  # Kernel size options
+        'use_batch_norm': [True, False],  # Batch norm inclusion
+        'dropout_rate': [0.2, 0.4, 0.5, 0.7],  # Dropout options
+        'pooling_type': ['max', 'avg'],  # Pooling types
+        'num_fc_layers': [1, 2],  # Number of fully connected layers
+        'fc_units': [128, 256],  # Units in FC layers
     }
-
 
     # Define a Configurable CNN with Dynamic Architecture
     class ConfigurableCNN(nn.Module):
@@ -216,7 +214,7 @@ if __name__ == '__main__':
             result['train_loss'] = sum(train_losses) / len(train_losses)
             print(f"Epoch [{epoch + 1}/{epochs}], Train Loss: {result['train_loss']:.4f}, "
                   f"Test Loss: {result['loss']:.4f}, Accuracy: {result['accuracy']:.4f}, "
-                  f"F0.5: {result['f0.5']:.4f}")
+                  f"F0.5: {result['f0.5']:.4f}")  # Adding the f0.5 to the print statement
             history.append(result)
         return history
 
@@ -324,12 +322,12 @@ if __name__ == '__main__':
 
 
     param_grid = {
-        'lr': [0.001, 0.01, 0.0001, 0.1],
-        'epochs': [5, 10, 15],
-        'batch_size': [8, 16, 32, 64],
-        'optimizer': [torch.optim.SGD, torch.optim.Adam],
-        'pooling_after_conv': [True, False],
-        'weight_decay': [0.0, 0.01, 1e-4, 1e-5]
+        'lr': [0.001, 0.01, 0.0001, 0.1],  # Learning rate options
+        'epochs': [5, 10, 15],  # Number of epochs to try
+        'batch_size': [8, 16, 32, 64],  # Batch sizes to test
+        'optimizer': [torch.optim.SGD, torch.optim.Adam],  # Optimizer options
+        'pooling_after_conv': [True, False],  # Whether to pool after convolution
+        'weight_decay': [0.0, 0.01, 1e-4, 1e-5]  # Weight decay (L2 regularization)
     }
 
 
@@ -339,7 +337,7 @@ if __name__ == '__main__':
         fp = torch.sum((preds == 1) & (labels == 0)).item()  # False Positives
         fn = torch.sum((preds == 0) & (labels == 1)).item()  # False Negatives
 
-        precision = tp / (tp + fp + 1e-8)  # small epsilon to avoid division by zero
+        precision = tp / (tp + fp + 1e-8)  # Add small epsilon to avoid division by zero
         recall = tp / (tp + fn + 1e-8)
 
         return precision, recall
@@ -390,13 +388,16 @@ if __name__ == '__main__':
         return test_results
 
 
+    # Initialize device
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
     # Perform random search with cross-validation to find the best hyperparameters
     results, best_params = random_search_with_cv(
         train_data=train_data,
         param_grid=param_grid,
         architecture_space=architecture_space,
-        n_iter=1,# change based on the number of iterations you want to try out
-        k=5, #chnage based on how many fold you want to try out
+        n_iter=10,
+        k=5,
         log_file="results_log.csv"
     )
 
@@ -462,7 +463,7 @@ def save_final_results(experiment_num, best_params, best_architecture, test_resu
 
 
 # Save the final results after training and evaluation
-experiment_number = 1  # Increment for each experiment run
+experiment_number = 100  # Increment for each experiment run
 save_final_results(
     experiment_num=experiment_number,
     best_params=best_params[0],
