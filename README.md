@@ -55,7 +55,7 @@ experiments were conducted and not on every computer where the experiments were 
 1. Download the requirements: pip install -r requirements.txt as mentioned above.
 2. Run the `data_preparation.py` file. For this, make sure to have `annotations_final.csv` downloaded in the directory.
 3. Run the `CNN.py` python script. For reproducibility, the seed is set to 678. You can change the number of iterations in
-the code - line XXX to reduce the running time. Two iterations take approximately 15 minutes to run. However, the more iterations
+the code - line 389 to reduce the running time. Two iterations take approximately 15 minutes to run. However, the more iterations
 you choose the run, the greater the chance of finding the most effective combination of hyperparameters.
 4. The results of each iteration are stored in `results_log.csv` so you can see the evaluation metrics of each iteration there.
 Moreover, from each iteration the best combination of hyperparameters is used to retrain the model and evaluate this setting on the
@@ -68,9 +68,9 @@ https://www.kaggle.com/datasets/feyzazkefe/trashnet
 This dataset was manually modified so that the number of plastic and non-plastic objects is the same as well as a
 variety of the other classes is approximately the same. Therefore, we advise to use the dataset given here and not to
 use the original one.
-2. Run the `data_preparation2.py` file. For this, make sure to have `annotations_other.csv` downloaded in the directory.
-3. Run the `CNN2.py` python script. For reproducibility, the seed is set to 678. You can change the number of iterations in
-the code - line XXX to reduce the running time. Two iterations take approximately 15 minutes to run. However, the more iterations
+2. Run the `data_preparation_other.py` file. For this, make sure to have `annotations_other.csv` downloaded in the directory.
+3. Run the `CNN_other.py` python script. For reproducibility, the seed is set to 678. You can change the number of iterations in
+the code - line 388 to reduce the running time. Two iterations take approximately 15 minutes to run. However, the more iterations
 you choose the run, the greater the chance of finding the most effective combination of hyperparameters.
 4. The results of each iteration are stored in `results_log.csv` so you can see the evaluation metrics of each iteration there.
 Moreover, from each iteration the best combination of hyperparameters is used to retrain the model and evaluate this setting on the
